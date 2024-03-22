@@ -1,5 +1,6 @@
 # holding_integrations
-
+To execute main scripts:
+- python main.py --date-to 2024-01-01 --days-to-shift 3 --days-window 5
 
 
 ## Getting started
