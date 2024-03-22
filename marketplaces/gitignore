@@ -1,0 +1,8 @@
+.env
+# macOS system files
+.DS_Store
+# Python bytecode
+__pycache__/
+*.pyc
+
+marketplaces/sql/.DS_Store
