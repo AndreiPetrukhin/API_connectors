@@ -1,0 +1,65 @@
+---
+
+stages:
+  - build
+  - deploy
+image: docker:dind
+
+#build#################################################
+
+# build:
+#   stage: build
+#   variables:
+#     PROJECT_DIR: ...
+#   before_script:
+#     - docker login -u ${CI_REGISTRY_USER} -p ${CI_JOB_TOKEN} ${CI_REGISTRY}
+#   script:
+#     - cd ${PROJECT_DIR}
+#     - docker build --no-cache --pull -t ${CI_REGISTRY_IMAGE}/dbt:${CI_PIPELINE_ID} .
+#     - docker push ${CI_REGISTRY_IMAGE}/dbt:${CI_PIPELINE_ID}
+#     - docker rmi ${CI_REGISTRY_IMAGE}/dbt:${CI_PIPELINE_ID} || true
+#   tags:
+#   - docker-build
+#   only:
+#     - master
+
+#deploy#################################################
+
+.deploy:
+  before_script:
+    - apk add --no-cache sshpass openssh-client
+  script:
+    - eval $(ssh-agent -s)
+    - echo "${SSH_PRIVATE_KEY}" | tr -d '\r' | base64 -d | ssh-add - > /dev/null
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo $ENV_FILE
+    - cp $ENV_FILE env
+    - echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+    - ssh -p ${SSH_PORT} -o stricthostkeychecking=no ${SSH_URL} "sudo rm -rf ${PROJECT_DIR}/*"
+    - ssh -p ${SSH_PORT} -o stricthostkeychecking=no ${SSH_URL} "sudo rm -rf ${TMP_DIR}"
+    - ssh -p ${SSH_PORT} -o stricthostkeychecking=no ${SSH_URL} "mkdir -p ${PROJECT_DIR}/"
+    - ssh -p ${SSH_PORT} -o stricthostkeychecking=no ${SSH_URL} "mkdir -p ${AIRFLOW_DIR}/"
+    - ssh -p ${SSH_PORT} -o stricthostkeychecking=no ${SSH_URL} "mkdir -p ${TMP_DIR}"
+    - scp -P ${SSH_PORT} -r ./* ${SSH_URL}:${PROJECT_DIR}/
+    - scp -P ${SSH_PORT} -r ./dags/* ${SSH_URL}:${TMP_DIR}
+    - ssh -p ${SSH_PORT} -o stricthostkeychecking=no ${SSH_URL} "sudo cp -R ${TMP_DIR}/* ${AIRFLOW_DIR}/dags"
+    - ssh -p ${SSH_PORT} -o stricthostkeychecking=no ${SSH_URL} "rm -rf ${TMP_DIR}/* "
+    - ssh -p ${SSH_PORT} -o stricthostkeychecking=no ${SSH_URL} "mv ${PROJECT_DIR}/env ${PROJECT_DIR}/.env"
+  when: manual
+  tags:
+    - docker-build
+
+master:deploy:
+  stage: deploy
+  variables:
+    SSH_URL: ${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}
+    SSH_PRIVATE_KEY: ${DEPLOY_PRIVATE_KEY}
+    SSH_PORT: ${DEPLOY_SSH_PORT}
+    PROJECT_DIR: /usr/app/holding_integrations
+    AIRFLOW_DIR: /opt/airflow
+    TMP_DIR: /tmp/holding_integrations
+  extends:
+    - .deploy
+  only:
+    - master
